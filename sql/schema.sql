@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS comments (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY `entry_id` (`entry_id`),
   KEY `created_at` (`created_at`)
+  KEY `user_id` (`user_id`)
 ) DEFAULT CHARSET=utf8mb4;
 
 -- DROP TABLE IF EXISTS footprints;
