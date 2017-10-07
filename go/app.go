@@ -353,12 +353,6 @@ func render(w http.ResponseWriter, r *http.Request, status int, file string, dat
 			return s
 		},
 		"split": strings.Split,
-		"numComments": func(id int) int {
-			row := db.QueryRow(`SELECT COUNT(*) AS c FROM comments WHERE entry_id = ?`, id)
-			var n int
-			checkErr(row.Scan(&n))
-			return n
-		},
 	}
 	tpl := template.Must(template.New(file).Funcs(fmap).ParseFiles(getTemplatePath(file), getTemplatePath("header.html")))
 	w.WriteHeader(status)
@@ -620,13 +614,39 @@ func ListEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 
+	entryIds := make([]string, 0)
+	for _, entry := range entries {
+		entryIds = append(entryIds, strconv.Itoa(entry.ID))
+	}
+	numCommentsOf := make(map[int]int)
+	if len(entryIds) > 0 {
+		placeholder := strings.Join(entryIds, ",")
+		rows, err := db.Query(fmt.Sprintf(`SELECT comments.entry_id, COUNT(*) as cnt FROM comments WHERE entry_id IN (%s) GROUP BY entry_id`, placeholder))
+		if err != sql.ErrNoRows {
+			checkErr(err)
+		}
+		for rows.Next() {
+			var entryID, count int
+			checkErr(rows.Scan(&entryID, &count))
+			numCommentsOf[entryID] = count
+		}
+		rows.Close()
+	}
+	for _, entry := range entries {
+		_, ok := numCommentsOf[entry.ID]
+		if !ok {
+			numCommentsOf[entry.ID] = 0
+		}
+	}
+
 	markFootprint(w, r, owner.ID)
 
 	render(w, r, http.StatusOK, "entries.html", struct {
-		Owner   *User
-		Entries []Entry
-		Myself  bool
-	}{owner, entries, getCurrentUser(w, r).ID == owner.ID})
+		Owner       *User
+		Entries     []Entry
+		Myself      bool
+		NumCountsOf map[int]int
+	}{owner, entries, getCurrentUser(w, r).ID == owner.ID, numCommentsOf})
 }
 
 func GetEntry(w http.ResponseWriter, r *http.Request) {
