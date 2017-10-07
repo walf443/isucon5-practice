@@ -423,7 +423,7 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT entries.id, entries.user_id, entries.private, SUBSTRING_INDEX(entries.body, "\n", 1) as title, entries.created_at FROM entries JOIN relations ON entries.user_id = relations.another WHERE relations.one = ? ORDER BY entries.created_at DESC LIMIT 10`, user.ID)
+	rows, err = db.Query(`SELECT entries.id, entries.user_id, entries.private, SUBSTRING_INDEX(entries.body, "\n", 1) as title, entries.created_at FROM entries FORCE INDEX (PRIMARY) JOIN relations ON entries.user_id = relations.another WHERE relations.one = ? ORDER BY entries.id DESC LIMIT 10`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
@@ -440,7 +440,7 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at, comments.entry_owner_user_id, comments.entry_private FROM comments INNER JOIN relations ON comments.user_id = relations.another WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 20`, user.ID)
+	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at, comments.entry_owner_user_id, comments.entry_private FROM comments FORCE INDEX (PRIMARY) INNER JOIN relations ON comments.user_id = relations.another WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 20`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
