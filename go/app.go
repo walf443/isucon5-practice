@@ -800,6 +800,17 @@ func GetInitialize(w http.ResponseWriter, r *http.Request) {
 
 	fCache = NewFriendsCache()
 	uCache = NewUserCache()
+
+	rows, err := db.Query(`SELECT one, another FROM relations ORDER BY id DESC`)
+	if err != sql.ErrNoRows {
+		checkErr(err)
+	}
+	for rows.Next() {
+		var one, another int
+		checkErr(rows.Scan(&one, &another))
+		fCache.Set(one, another, true)
+		fCache.Set(another, one, true)
+	}
 }
 
 func main() {
