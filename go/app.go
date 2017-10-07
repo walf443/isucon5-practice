@@ -816,6 +816,17 @@ func GetInitialize(w http.ResponseWriter, r *http.Request) {
 		checkErr(rows.Scan(&one, &another))
 		fCache.Set(one, another, true)
 	}
+
+	rows, err = db.Query(`SELECT id, account_name, nick_name FROM users`)
+	if err != sql.ErrNoRows {
+		checkErr(err)
+	}
+	for rows.Next() {
+		var id int
+		var accountName, nickName string
+		checkErr(rows.Scan(&id, &accountName, &nickName))
+		uCache.Set(id, User{ID: id, AccountName: accountName, NickName: nickName})
+	}
 }
 
 func main() {
