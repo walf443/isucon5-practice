@@ -803,7 +803,21 @@ func main() {
 		ssecret = "beermoris"
 	}
 
-	db, err = sql.Open("mysql:trace", user+":"+password+"@tcp("+host+":"+strconv.Itoa(port)+")/"+dbname+"?loc=Local&parseTime=true")
+	var driver string
+	var target string
+	if os.Getenv("PRODUCTION") == "" {
+		driver = "mysql:trace"
+		target = "tcp(" + host + ":" + strconv.Itoa(port) + ")"
+	} else {
+		driver = "mysql"
+		if host == "localhost" && port == 3306 {
+			target = "unix(/var/run/mysqld/mysqld.sock)"
+		} else {
+			target = "tcp(" + host + ":" + strconv.Itoa(port) + ")"
+		}
+	}
+
+	db, err = sql.Open(driver, user+":"+password+"@"+target+"/"+dbname+"?loc=Local&parseTime=true")
 	if err != nil {
 		log.Fatalf("Failed to connect to DB: %s.", err.Error())
 	}
