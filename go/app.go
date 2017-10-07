@@ -27,6 +27,7 @@ var (
 	store *sessions.CookieStore
 
 	fCache *friendsCache
+	uCache *userCache
 )
 
 type User struct {
@@ -85,6 +86,33 @@ var (
 	ErrPermissionDenied = errors.New("Permission denied.")
 	ErrContentNotFound  = errors.New("Content not found.")
 )
+
+type userCache struct {
+	// Setが多いならsync.Mutex
+	sync.RWMutex
+	items map[int]User
+}
+
+func NewUserCache() *userCache {
+	m := make(map[int]User)
+	c := &userCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *userCache) Set(key int, value User) {
+	c.Lock()
+	c.items[key] = value
+	c.Unlock()
+}
+
+func (c *userCache) Get(key int) (User, bool) {
+	c.RLock()
+	v, found := c.items[key]
+	c.RUnlock()
+	return v, found
+}
 
 type friendsCache struct {
 	// Setが多いならsync.Mutex
@@ -180,12 +208,19 @@ func authenticated(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func getUser(w http.ResponseWriter, userID int) *User {
-	row := db.QueryRow(`SELECT * FROM users WHERE id = ?`, userID)
-	user := User{}
-	err := row.Scan(&user.ID, &user.AccountName, &user.NickName, &user.Email, new(string))
+	user, ok := uCache.Get(userID)
+	if ok {
+		return &user
+	}
+
+	row := db.QueryRow(`SELECT id, account_name, nick_name FROM users WHERE id = ?`, userID)
+	err := row.Scan(&user.ID, &user.AccountName, &user.NickName)
 	if err == sql.ErrNoRows {
 		checkErr(ErrContentNotFound)
 	}
+
+	uCache.Set(user.ID, user)
+
 	checkErr(err)
 	return &user
 }
@@ -774,6 +809,7 @@ func GetInitialize(w http.ResponseWriter, r *http.Request) {
 	db.Exec("DELETE FROM comments WHERE id > 1500000")
 
 	fCache = NewFriendsCache()
+	uCache = NewUserCache()
 }
 
 func main() {
@@ -812,6 +848,7 @@ func main() {
 	store = sessions.NewCookieStore([]byte(ssecret))
 
 	fCache = NewFriendsCache()
+	uCache = NewUserCache()
 
 	r := mux.NewRouter()
 
