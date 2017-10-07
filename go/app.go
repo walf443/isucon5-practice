@@ -862,9 +862,10 @@ func main() {
 	limit := os.Getenv("DB_MAXOPENCONNS")
 	if len(limit) > 0 {
 		i, err := strconv.Atoi(limit)
-		if err == nil {
-			db.SetMaxOpenConns(i)
+		if err != nil {
+			panic(err)
 		}
+		db.SetMaxOpenConns(i)
 	}
 
 	store = sessions.NewCookieStore([]byte(ssecret))
