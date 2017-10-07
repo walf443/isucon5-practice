@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -25,7 +26,7 @@ var (
 	db    *sql.DB
 	store *sessions.CookieStore
 
-	isFriends map[string]bool
+	fCache *friendsCache
 )
 
 type User struct {
@@ -84,6 +85,49 @@ var (
 	ErrPermissionDenied = errors.New("Permission denied.")
 	ErrContentNotFound  = errors.New("Content not found.")
 )
+
+type friendsCache struct {
+	// Setが多いならsync.Mutex
+	sync.RWMutex
+	items map[string]bool
+}
+
+func NewFriendsCache() *friendsCache {
+	m := make(map[string]bool)
+	c := &friendsCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *friendsCache) Set(uid int, aid int, value bool) {
+	key := ""
+
+	if uid > aid {
+		key = fmt.Sprintf("%d_%d", aid, uid)
+	} else {
+		key = fmt.Sprintf("%d_%d", uid, aid)
+	}
+
+	c.Lock()
+	c.items[key] = value
+	c.Unlock()
+}
+
+func (c *friendsCache) Get(uid int, aid int) (bool, bool) {
+	key := ""
+
+	if uid > aid {
+		key = fmt.Sprintf("%d_%d", aid, uid)
+	} else {
+		key = fmt.Sprintf("%d_%d", uid, aid)
+	}
+
+	c.RLock()
+	v, found := c.items[key]
+	c.RUnlock()
+	return v, found
+}
 
 func authenticate(w http.ResponseWriter, r *http.Request, email, passwd string) {
 	query := `SELECT u.id AS id, u.account_name AS account_name, u.nick_name AS nick_name, u.email AS email
@@ -161,14 +205,7 @@ func isFriend(w http.ResponseWriter, r *http.Request, anotherID int) bool {
 	session := getSession(w, r)
 	id := session.Values["user_id"].(int)
 
-	key := ""
-	if id > anotherID {
-		key = fmt.Sprintf("%d_%d", anotherID, id)
-	} else {
-		key = fmt.Sprintf("%d_%d", id, anotherID)
-	}
-
-	isF, ok := isFriends[key]
+	isF, ok := fCache.Get(id, anotherID)
 	if ok {
 		return isF
 	}
@@ -179,7 +216,7 @@ func isFriend(w http.ResponseWriter, r *http.Request, anotherID int) bool {
 	checkErr(err)
 
 	ret := *cnt > 0
-	isFriends[key] = ret
+	fCache.Set(id, anotherID, ret)
 
 	return ret
 }
@@ -730,6 +767,9 @@ func PostFriends(w http.ResponseWriter, r *http.Request) {
 		another := getUserFromAccount(w, anotherAccount)
 		_, err := db.Exec(`INSERT INTO relations (one, another) VALUES (?,?), (?,?)`, user.ID, another.ID, another.ID, user.ID)
 		checkErr(err)
+
+		fCache.Set(user.ID, another.ID, true)
+
 		http.Redirect(w, r, "/friends", http.StatusSeeOther)
 	}
 }
@@ -739,6 +779,8 @@ func GetInitialize(w http.ResponseWriter, r *http.Request) {
 	db.Exec("DELETE FROM footprints WHERE id > 500000")
 	db.Exec("DELETE FROM entries WHERE id > 500000")
 	db.Exec("DELETE FROM comments WHERE id > 1500000")
+
+	fCache = NewFriendsCache()
 }
 
 func main() {
@@ -776,7 +818,7 @@ func main() {
 
 	store = sessions.NewCookieStore([]byte(ssecret))
 
-	isFriends = make(map[string]bool)
+	fCache = NewFriendsCache()
 
 	r := mux.NewRouter()
 
