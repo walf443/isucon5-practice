@@ -448,9 +448,8 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at, entries.user_id, entries.private FROM comments
+	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at, comments.entry_owner_user_id, comments.entry_private FROM comments
                         INNER JOIN relations ON comments.user_id = relations.another
-                        INNER JOIN entries ON comments.entry_id = entries.id
                         WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 20`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
