@@ -1,8 +1,15 @@
 
-app:
+app: deps
 	go build -o app app.go
 
-app_deploy:
+deps:
+	go get github.com/go-sql-driver/mysql
+	go get github.com/go-sql-driver/mysql
+	go get github.com/gorilla/context
+	go get github.com/gorilla/mux
+	go get github.com/gorilla/sessions
+
+app_deploy: deps
 	GOOS=linux go build -o app_deploy app.go
 
 deploy: app_deploy
@@ -12,3 +19,5 @@ deploy: app_deploy
 	scp app_deploy isu:/home/isucon/webapp/go/app
 	ssh isu sudo -H systemctl start isuxi.go.service
 	echo finish deploy by $(USER) | notify_slack
+
+.PHONY: deps deploy
