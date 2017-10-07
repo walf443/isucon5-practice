@@ -859,6 +859,15 @@ func main() {
 	}
 	defer db.Close()
 
+	limit := os.Getenv("DB_MAXOPENCONNS")
+	if len(limit) > 0 {
+		i, err := strconv.Atoi(limit)
+		if err != nil {
+			panic(err)
+		}
+		db.SetMaxOpenConns(i)
+	}
+
 	store = sessions.NewCookieStore([]byte(ssecret))
 
 	fCache = NewFriendsCache()
