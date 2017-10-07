@@ -809,7 +809,6 @@ func GetInitialize(w http.ResponseWriter, r *http.Request) {
 		var one, another int
 		checkErr(rows.Scan(&one, &another))
 		fCache.Set(one, another, true)
-		fCache.Set(another, one, true)
 	}
 }
 
