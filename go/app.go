@@ -62,6 +62,8 @@ type Comment struct {
 	UserID    int
 	Comment   string
 	CreatedAt time.Time
+
+	EntryOwnerUserID int
 }
 
 type Friend struct {
@@ -446,21 +448,20 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at FROM comments INNER JOIN relations ON comments.user_id = relations.another WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 10`, user.ID)
+	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at, entries.user_id, entries.private FROM comments
+                        INNER JOIN relations ON comments.user_id = relations.another
+                        INNER JOIN entries ON comments.entry_id = entries.id
+                        WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 20`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
 	commentsOfFriends := make([]Comment, 0, 10)
 	for rows.Next() {
 		c := Comment{}
-		checkErr(rows.Scan(&c.ID, &c.EntryID, &c.UserID, &c.Comment, &c.CreatedAt))
-		row := db.QueryRow(`SELECT id, user_id, private, created_at FROM entries WHERE id = ?`, c.EntryID)
-		var id, userID, private int
-		var createdAt time.Time
-		checkErr(row.Scan(&id, &userID, &private, &createdAt))
-		entry := Entry{id, userID, private == 1, "", "", createdAt}
-		if entry.Private {
-			if !permitted(w, r, entry.UserID) {
+		private := 0
+		checkErr(rows.Scan(&c.ID, &c.EntryID, &c.UserID, &c.Comment, &c.CreatedAt, &c.EntryOwnerUserID, &private))
+		if private == 1 {
+			if !permitted(w, r, c.EntryOwnerUserID) {
 				continue
 			}
 		}
