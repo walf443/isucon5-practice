@@ -32,6 +32,7 @@ var (
 
 	fCache *friendsCache
 	uCache *userCache
+	ccCache *commentCounterCache
 
 	hport = flag.Uint("port", 0, "port to listen")
 )
@@ -94,6 +95,43 @@ var (
 	ErrPermissionDenied = errors.New("Permission denied.")
 	ErrContentNotFound  = errors.New("Content not found.")
 )
+
+type commentCounterCache struct {
+	sync.RWMutex
+	items map[int]int
+}
+
+func NewCommentCounterCache() *commentCounterCache {
+	m := make(map[int]int)
+	c := &commentCounterCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *commentCounterCache) Set(key int, value int) {
+	c.Lock()
+	c.items[key] = value
+	c.Unlock()
+}
+
+func (c *commentCounterCache) Get(key int) (int, bool) {
+	c.RLock()
+	v, found := c.items[key]
+	c.RUnlock()
+	return v, found
+}
+
+func (c *commentCounterCache) Incr(key int) {
+	c.Lock()
+	v, found := c.items[key]
+	if found {
+		c.items[key] = v + 1
+	} else {
+		c.items[key] = 1
+	}
+	c.Unlock()
+}
 
 type userCache struct {
 	// Setが多いならsync.Mutex
@@ -353,6 +391,17 @@ func render(w http.ResponseWriter, r *http.Request, status int, file string, dat
 			return s
 		},
 		"split": strings.Split,
+		"numComments": func(id int) int {
+			count, ok := ccCache.Get(id)
+			if ok {
+				return count
+			}
+			row := db.QueryRow(`SELECT COUNT(*) AS c FROM comments WHERE entry_id = ?`, id)
+			var n int
+			checkErr(row.Scan(&n))
+			ccCache.Set(id, n)
+			return n
+		},
 	}
 	tpl := template.Must(template.New(file).Funcs(fmap).ParseFiles(getTemplatePath(file), getTemplatePath("header.html")))
 	w.WriteHeader(status)
@@ -740,6 +789,16 @@ func PostComment(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Exec(`INSERT INTO comments (entry_id, user_id, comment, entry_owner_user_id, entry_private) VALUES (?,?,?,?,?)`, entry.ID, user.ID, r.FormValue("comment"), userID, private)
 	checkErr(err)
+
+	_, ok := ccCache.Get(id)
+	if ok {
+		ccCache.Incr(entry.ID)
+	} else {
+		row := db.QueryRow(`SELECT COUNT(*) AS c FROM comments WHERE entry_id = ?`, id)
+		var n int
+		checkErr(row.Scan(&n))
+		ccCache.Set(entry.ID, n)
+	}
 	http.Redirect(w, r, "/diary/entry/"+strconv.Itoa(entry.ID), http.StatusSeeOther)
 }
 
@@ -826,6 +885,7 @@ func GetInitialize(w http.ResponseWriter, r *http.Request) {
 
 	fCache = NewFriendsCache()
 	uCache = NewUserCache()
+	ccCache = NewCommentCounterCache()
 
 	rows, err := db.Query(`SELECT one, another FROM relations ORDER BY id DESC`)
 	if err != sql.ErrNoRows {
@@ -911,6 +971,7 @@ func main() {
 
 	fCache = NewFriendsCache()
 	uCache = NewUserCache()
+	ccCache = NewCommentCounterCache()
 
 	r := mux.NewRouter()
 
