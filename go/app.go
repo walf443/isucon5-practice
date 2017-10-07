@@ -411,7 +411,7 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT * FROM comments ORDER BY created_at DESC LIMIT 1000`)
+	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at FROM comments INNER JOIN relations ON comments.user_id = relations.one WHERE relations.another = ? ORDER BY comments.created_at DESC LIMIT 10`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
@@ -419,9 +419,6 @@ LIMIT 10`, user.ID)
 	for rows.Next() {
 		c := Comment{}
 		checkErr(rows.Scan(&c.ID, &c.EntryID, &c.UserID, &c.Comment, &c.CreatedAt))
-		if !isFriend(w, r, c.UserID) {
-			continue
-		}
 		row := db.QueryRow(`SELECT id, user_id, private, created_at FROM entries WHERE id = ?`, c.EntryID)
 		var id, userID, private int
 		var createdAt time.Time
