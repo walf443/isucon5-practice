@@ -394,17 +394,17 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT entries.id, entries.user_id, entries.private, entries.body, entries.created_at FROM entries JOIN relations ON entries.user_id = relations.one WHERE relations.another = ? ORDER BY entries.created_at DESC LIMIT 10`, user.ID)
+	rows, err = db.Query(`SELECT entries.id, entries.user_id, entries.private, SUBSTRING_INDEX(entries.body, "\n", 1) as title, entries.created_at FROM entries JOIN relations ON entries.user_id = relations.one WHERE relations.another = ? ORDER BY entries.created_at DESC LIMIT 10`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
 	entriesOfFriends := make([]Entry, 0, 10)
 	for rows.Next() {
 		var id, userID, private int
-		var body string
+		var title string
 		var createdAt time.Time
-		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt))
-		entriesOfFriends = append(entriesOfFriends, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt})
+		checkErr(rows.Scan(&id, &userID, &private, &title, &createdAt))
+		entriesOfFriends = append(entriesOfFriends, Entry{id, userID, private == 1, title, "", createdAt})
 		if len(entriesOfFriends) >= 10 {
 			break
 		}
@@ -422,12 +422,11 @@ LIMIT 10`, user.ID)
 		if !isFriend(w, r, c.UserID) {
 			continue
 		}
-		row := db.QueryRow(`SELECT * FROM entries WHERE id = ?`, c.EntryID)
+		row := db.QueryRow(`SELECT id, user_id, private, created_at FROM entries WHERE id = ?`, c.EntryID)
 		var id, userID, private int
-		var body string
 		var createdAt time.Time
-		checkErr(row.Scan(&id, &userID, &private, &body, &createdAt))
-		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
+		checkErr(row.Scan(&id, &userID, &private, &createdAt))
+		entry := Entry{id, userID, private == 1, "", "", createdAt}
 		if entry.Private {
 			if !permitted(w, r, entry.UserID) {
 				continue
