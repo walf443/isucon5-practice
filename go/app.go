@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -23,6 +24,8 @@ import (
 var (
 	db    *sql.DB
 	store *sessions.CookieStore
+
+	isFriends map[string]bool
 )
 
 type User struct {
@@ -156,12 +159,29 @@ func getUserFromAccount(w http.ResponseWriter, name string) *User {
 
 func isFriend(w http.ResponseWriter, r *http.Request, anotherID int) bool {
 	session := getSession(w, r)
-	id := session.Values["user_id"]
+	id := session.Values["user_id"].(int)
+
+	key := ""
+	if id > anotherID {
+		key = fmt.Sprintf("%d_%d", anotherID, id)
+	} else {
+		key = fmt.Sprintf("%d_%d", id, anotherID)
+	}
+
+	isF, ok := isFriends[key]
+	if ok {
+		return isF
+	}
+
 	row := db.QueryRow(`SELECT COUNT(1) AS cnt FROM relations WHERE (one = ? AND another = ?) OR (one = ? AND another = ?)`, id, anotherID, anotherID, id)
 	cnt := new(int)
 	err := row.Scan(cnt)
 	checkErr(err)
-	return *cnt > 0
+
+	ret := *cnt > 0
+	isFriends[key] = ret
+
+	return ret
 }
 
 func isFriendAccount(w http.ResponseWriter, r *http.Request, name string) bool {
@@ -755,6 +775,8 @@ func main() {
 	defer db.Close()
 
 	store = sessions.NewCookieStore([]byte(ssecret))
+
+	isFriends = make(map[string]bool)
 
 	r := mux.NewRouter()
 
