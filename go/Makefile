@@ -8,6 +8,7 @@ deps:
 	go get github.com/gorilla/context
 	go get github.com/gorilla/mux
 	go get github.com/gorilla/sessions
+	go get github.com/walf443/go-sql-tracer
 
 app_deploy: deps
 	GOOS=linux go build -o app_deploy app.go
