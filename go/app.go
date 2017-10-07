@@ -62,6 +62,8 @@ type Comment struct {
 	UserID    int
 	Comment   string
 	CreatedAt time.Time
+
+	EntryOwnerUserID int
 }
 
 type Friend struct {
@@ -345,14 +347,6 @@ func render(w http.ResponseWriter, r *http.Request, status int, file string, dat
 			return s
 		},
 		"split": strings.Split,
-		"getEntry": func(id int) Entry {
-			row := db.QueryRow(`SELECT * FROM entries WHERE id=?`, id)
-			var entryID, userID, private int
-			var body string
-			var createdAt time.Time
-			checkErr(row.Scan(&entryID, &userID, &private, &body, &createdAt))
-			return Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
-		},
 		"numComments": func(id int) int {
 			row := db.QueryRow(`SELECT COUNT(*) AS c FROM comments WHERE entry_id = ?`, id)
 			var n int
@@ -446,21 +440,17 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at FROM comments INNER JOIN relations ON comments.user_id = relations.another WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 10`, user.ID)
+	rows, err = db.Query(`SELECT comments.id, comments.entry_id, comments.user_id, comments.comment, comments.created_at, comments.entry_owner_user_id, comments.entry_private FROM comments INNER JOIN relations ON comments.user_id = relations.another WHERE relations.one = ? ORDER BY comments.id DESC LIMIT 20`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
 	commentsOfFriends := make([]Comment, 0, 10)
 	for rows.Next() {
 		c := Comment{}
-		checkErr(rows.Scan(&c.ID, &c.EntryID, &c.UserID, &c.Comment, &c.CreatedAt))
-		row := db.QueryRow(`SELECT id, user_id, private, created_at FROM entries WHERE id = ?`, c.EntryID)
-		var id, userID, private int
-		var createdAt time.Time
-		checkErr(row.Scan(&id, &userID, &private, &createdAt))
-		entry := Entry{id, userID, private == 1, "", "", createdAt}
-		if entry.Private {
-			if !permitted(w, r, entry.UserID) {
+		private := 0
+		checkErr(rows.Scan(&c.ID, &c.EntryID, &c.UserID, &c.Comment, &c.CreatedAt, &c.EntryOwnerUserID, &private))
+		if private == 1 {
+			if !permitted(w, r, c.EntryOwnerUserID) {
 				continue
 			}
 		}
@@ -654,7 +644,7 @@ func GetEntry(w http.ResponseWriter, r *http.Request) {
 			checkErr(ErrPermissionDenied)
 		}
 	}
-	rows, err := db.Query(`SELECT * FROM comments WHERE entry_id = ?`, entry.ID)
+	rows, err := db.Query(`SELECT id, entry_id, user_id, comment, created_at FROM comments WHERE entry_id = ?`, entry.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
@@ -722,7 +712,7 @@ func PostComment(w http.ResponseWriter, r *http.Request) {
 	}
 	user := getCurrentUser(w, r)
 
-	_, err = db.Exec(`INSERT INTO comments (entry_id, user_id, comment) VALUES (?,?,?)`, entry.ID, user.ID, r.FormValue("comment"))
+	_, err = db.Exec(`INSERT INTO comments (entry_id, user_id, comment, entry_owner_user_id, entry_private) VALUES (?,?,?,?,?)`, entry.ID, user.ID, r.FormValue("comment"), userID, private)
 	checkErr(err)
 	http.Redirect(w, r, "/diary/entry/"+strconv.Itoa(entry.ID), http.StatusSeeOther)
 }
