@@ -34,6 +34,8 @@ var (
 	uCache *userCache
 
 	hport = flag.Uint("port", 0, "port to listen")
+
+	templates *template.Template
 )
 
 type User struct {
@@ -94,6 +96,32 @@ var (
 	ErrPermissionDenied = errors.New("Permission denied.")
 	ErrContentNotFound  = errors.New("Content not found.")
 )
+
+func init() {
+	fmap := template.FuncMap{
+		"getUser": func(id int) *User {
+			return getUser(id)
+		},
+		"prefectures": func() []string {
+			return prefs
+		},
+		"substring": func(s string, l int) string {
+			if len(s) > l {
+				return s[:l]
+			}
+			return s
+		},
+		"split": strings.Split,
+		"numComments": func(id int) int {
+			row := db.QueryRow(`SELECT COUNT(*) AS c FROM comments WHERE entry_id = ?`, id)
+			var n int
+			checkErr(row.Scan(&n))
+			return n
+		},
+	}
+
+	templates = template.Must(template.New("").Funcs(fmap).ParseFiles(getTemplatePath("entries.html"), getTemplatePath("entry.html"), getTemplatePath("error.html"), getTemplatePath("footprints.html"), getTemplatePath("friends.html"), getTemplatePath("header.html"), getTemplatePath("index.html"), getTemplatePath("login.html"), getTemplatePath("profile.html")))
+}
 
 type userCache struct {
 	// Setが多いならsync.Mutex
@@ -215,7 +243,7 @@ func authenticated(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func getUser(w http.ResponseWriter, userID int) *User {
+func getUser(userID int) *User {
 	user, ok := uCache.Get(userID)
 	if ok {
 		return &user
@@ -333,30 +361,9 @@ func getTemplatePath(file string) string {
 }
 
 func render(w http.ResponseWriter, r *http.Request, status int, file string, data interface{}) {
-	fmap := template.FuncMap{
-		"getUser": func(id int) *User {
-			return getUser(w, id)
-		},
-		"getCurrentUser": func() *User {
-			return getCurrentUser(w, r)
-		},
-		"isFriend": func(id int) bool {
-			return isFriend(w, r, id)
-		},
-		"prefectures": func() []string {
-			return prefs
-		},
-		"substring": func(s string, l int) string {
-			if len(s) > l {
-				return s[:l]
-			}
-			return s
-		},
-		"split": strings.Split,
-	}
-	tpl := template.Must(template.New(file).Funcs(fmap).ParseFiles(getTemplatePath(file), getTemplatePath("header.html")))
 	w.WriteHeader(status)
-	checkErr(tpl.Execute(w, data))
+
+	checkErr(templates.ExecuteTemplate(w, file, data))
 }
 
 func GetLogin(w http.ResponseWriter, r *http.Request) {
@@ -664,7 +671,7 @@ func GetEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	checkErr(err)
 	entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
-	owner := getUser(w, entry.UserID)
+	owner := getUser(entry.UserID)
 	if entry.Private {
 		if !permitted(w, r, owner.ID) {
 			checkErr(ErrPermissionDenied)
@@ -730,7 +737,7 @@ func PostComment(w http.ResponseWriter, r *http.Request) {
 	checkErr(err)
 
 	entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
-	owner := getUser(w, entry.UserID)
+	owner := getUser(entry.UserID)
 	if entry.Private {
 		if !permitted(w, r, owner.ID) {
 			checkErr(ErrPermissionDenied)
